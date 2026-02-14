@@ -1,0 +1,39 @@
+{
+    "manifest_version": 3,
+    "name": "LMS Attendance Tracker",
+    "version": "1.0.0",
+    "description": "Automatically track attendance, break time, and remaining work time from Bridgeon LMS.",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "https://student.bridgeon.in/*"
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icon16.png",
+            "48": "icon48.png",
+            "128": "icon128.png"
+        }
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://student.bridgeon.in/attendance*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "icons": {
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
+    }
+}
