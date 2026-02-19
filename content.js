@@ -3,309 +3,301 @@
    ===================================================== */
 
 (() => {
-    console.log("LMS Attendance Tracker: Content Script Loaded");
+    // Prevent multiple injections
+    if (window._lmsTrackerActive) return;
+    window._lmsTrackerActive = true;
+
+    console.log("LMS Attendance Tracker: Data Engine V2.1 Logic Fixed");
 
     /* =====================================================
-       CONSTANTS & CONFIG
-    ===================================================== */
+       1. CONSTANTS & CONFIGURATION
+       ===================================================== */
     const CONFIG = {
         WORK_START_HOUR: 9,
         WORK_END_HOUR: 17,
-        MAX_BREAK_MS: 90 * 60 * 1000, // 90 minutes
-        LATE_THRESHOLD_MS: 150 * 60 * 1000 // 2h 30m for "Late" vs "Over Break"
+        MAX_BREAK_MS: 90 * 60 * 1000,      // 90 minutes
+        LATE_THRESHOLD_MS: 150 * 60 * 1000, // 2.5 hours threshold for status
+        DEBOUNCE_MS: 800,                 // Debounce for DOM changes
+        SYNC_INTERVAL_MS: 1000            // Interval for live calculations
     };
 
-    /* =====================================================
-       CONTEXT SAFETY
-    ===================================================== */
-    function isContextValid() {
-        try {
-            return !!(chrome && chrome.runtime && chrome.runtime.id);
-        } catch (e) {
-            return false;
-        }
-    }
-
-    function getTodayKey() {
-        const d = new Date();
-        return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-    }
+    let lastPayloadHash = "";
 
     /* =====================================================
-       INITIALIZATION & DAILY RESET
-    ===================================================== */
-    if (isContextValid()) {
-        resetIfNewDay().then(() => {
-            scrapeTimeline();
-            setupMutationObserver();
-        });
-    }
+       2. INITIALIZATION
+       ===================================================== */
+    function init() {
+        setupObserver();
 
-    function resetIfNewDay() {
-        return new Promise((resolve) => {
-            if (!isContextValid()) return resolve();
+        // Initial delay to allow page content to settle
+        setTimeout(processPage, 1500);
 
-            // Check daily reset on load
-            chrome.runtime.sendMessage({ action: 'CHECK_DAILY_RESET' }, () => {
-                if (chrome.runtime.lastError) { /* ignore */ }
-                resolve();
-            });
-        });
+        // Periodic update for live timers (Working Time / Total Time)
+        setInterval(processPage, CONFIG.SYNC_INTERVAL_MS);
     }
 
     /* =====================================================
-       SCRAPER ENGINE (EXTRACT RAW PUNCHES)
-    ===================================================== */
-    function scrapeTimeline() {
-        if (!isContextValid()) {
-            return cleanupObserver();
-        }
+       3. DATA EXTRACTION ENGINE (ROBUST & TARGETED)
+       ===================================================== */
+    function extractPunches() {
+        const found = [];
+        const today = new Date();
+        const now = today.getTime();
 
-        const rawTimes = extractTimes();
+        // Preparation for today's data filtering
+        const d = today.getDate();
+        const mShort = today.toLocaleString('default', { month: 'short' });
+        const mFull = today.toLocaleString('default', { month: 'long' });
 
-        // --- 1. Identify First Check-In ---
-        const firstPunchIn = rawTimes.length > 0 ? rawTimes[0] : null;
+        // Search for relevant elements
+        const candidates = document.querySelectorAll("td, div, span, p, tr");
 
-        // --- 2. Calculate Durations ---
-        const metrics = calculateMetrics(rawTimes);
+        candidates.forEach(el => {
+            if (el.children.length > 5) return;
 
-        // --- 3. Determine Status ---
-        // Status logic:
-        // Present: Break Remaining > 0
-        // Late: Break Remaining <= 0 BUT Total Additional Break < 2.5 hours
-        // Over Break Time: Total Additional Break >= 2.5 hours
+            const text = el.textContent.trim();
+            const match = text.match(/^(In|Out)\s?[-:]?\s?(\d{1,2}:\d{2}\s?(AM|PM))/i);
 
-        let status = "Present";
-        const totalExcessBreak = metrics.additionalBreakTime + metrics.overusedBreak; // Combine both types of excess
+            if (match) {
+                const type = match[1].toLowerCase();
+                const timeStr = match[2];
 
-        if (metrics.breakRemaining === 0) {
-            if (totalExcessBreak >= CONFIG.LATE_THRESHOLD_MS) {
-                status = "Over Break Time";
-            } else {
-                status = "Late";
-            }
-        }
+                if (isTodayContext(el, d, mShort, mFull)) {
+                    const parsedDate = parseTime(timeStr);
+                    if (parsedDate) {
+                        const punchMs = parsedDate.getTime();
 
-        // --- 4. Sync Data ---
-        const dataPayload = {
-            currentDate: getTodayKey(),
-            workingTime: metrics.workingTime,
-            breakTime: metrics.breakTime, // Standard break used (9-5)
-            additionalBreakTime: metrics.additionalBreakTime, // Break used outside 9-5
-            additionalTime: metrics.additionalTime, // Work outside 9-5
-            overusedBreak: metrics.overusedBreak, // Excess of standard break
-            totalTime: metrics.totalTime,
-            breakRemaining: metrics.breakRemaining,
-            hasData: rawTimes.length > 0,
-            isWorking: metrics.isWorking,
-            status: status, // New Status Field
-            times: rawTimes.map(t => t.toISOString()),
-            lastUpdated: Date.now()
-        };
-
-        console.log("LMS Calc:", dataPayload);
-
-        // Save to Storage (Read by Popup)
-        chrome.storage.local.set(dataPayload);
-
-        // Sync to Background (for long-running state if needed)
-        chrome.runtime.sendMessage({
-            action: 'SYNC_CALCULATED_DATA',
-            data: dataPayload
-        });
-    }
-
-    /* =====================================================
-       CALCULATION LOGIC (CORE RULES)
-    ===================================================== */
-    function calculateMetrics(times) {
-        const now = new Date();
-        let workingTime = 0;       // 9AM-5PM Work
-        let additionalTime = 0;    // <9AM or >5PM Work
-        let breakTime = 0;         // 9AM-5PM Break
-        let additionalBreakTime = 0; // <9AM or >5PM Break
-
-        // --- A. Process Work Sessions (Pair: In -> Out) ---
-        for (let i = 0; i < times.length; i += 2) {
-            const inTime = times[i];
-            // If no Out punch, use NOW (live tracking)
-            const outTime = (times[i + 1]) ? times[i + 1] : now;
-
-            const split = splitDurationByWindow(inTime, outTime);
-            workingTime += split.standard;
-            additionalTime += split.additional;
-        }
-
-        // --- B. Process Break Sessions (Pair: Out -> Next In) ---
-        for (let i = 1; i < times.length; i += 2) {
-            const breakStart = times[i];
-            // If no Next In punch, use NOW (live tracking on break)
-            const breakEnd = (times[i + 1]) ? times[i + 1] : now;
-
-            // Only calculate break if we actually have a start time (Out punch)
-            if (breakStart) {
-                const split = splitDurationByWindow(breakStart, breakEnd);
-                breakTime += split.standard;
-                additionalBreakTime += split.additional;
-            }
-        }
-
-        // --- C. Derived Metrics ---
-
-        // 1. Break Remaining (Based ONLY on 9-5 Break Time)
-        // Max 90 mins. Cannot be negative.
-        const breakRemaining = Math.max(0, CONFIG.MAX_BREAK_MS - breakTime);
-
-        // 2. Overused Break (Excess within 9-5 window)
-        const overusedBreak = Math.max(0, breakTime - CONFIG.MAX_BREAK_MS);
-
-        // 3. Total Time (First In -> Now/Last Out)
-        // Rule: Start from First In. Never stop if currently working.
-        // If checked out, stop at last Out.
-        // BUT user requested "Total Time must run always... until last Check Out"
-        // Interpretation: If currently IN, Total Time = Now - First In.
-        // If currently OUT, Total Time = Last Out - First In.
-
-        let totalTime = 0;
-        if (times.length > 0) {
-            const firstIn = times[0];
-            const lastOut = (times.length % 2 === 0) ? times[times.length - 1] : now;
-            totalTime = Math.max(0, lastOut - firstIn);
-        }
-
-        // 4. Is Working? (Odd number of punches = Checked In)
-        const isWorking = times.length % 2 !== 0;
-
-        return {
-            workingTime,
-            additionalTime,
-            breakTime,
-            additionalBreakTime,
-            overusedBreak,
-            breakRemaining,
-            totalTime,
-            isWorking
-        };
-    }
-
-    // Helper: Split a duration into "Standard (9-5)" and "Additional"
-    function splitDurationByWindow(start, end) {
-        const s = new Date(start);
-        const e = new Date(end);
-
-        const startWindow = new Date(s);
-        startWindow.setHours(CONFIG.WORK_START_HOUR, 0, 0, 0); // 9:00 AM
-
-        const endWindow = new Date(s);
-        endWindow.setHours(CONFIG.WORK_END_HOUR, 0, 0, 0); // 5:00 PM
-
-        let standard = 0;
-        let additional = 0;
-
-        // 1. Entirely Before 9 AM
-        if (e <= startWindow) {
-            additional += (e - s);
-        }
-        // 2. Entirely After 5 PM
-        else if (s >= endWindow) {
-            additional += (e - s);
-        }
-        // 3. Overlap / Inside Window
-        else {
-            // Part before 9 AM
-            if (s < startWindow) {
-                additional += (startWindow - s);
-            }
-            // Part after 5 PM
-            if (e > endWindow) {
-                additional += (e - endWindow);
-            }
-            // Part inside 9 AM - 5 PM
-            const effectiveStart = (s < startWindow) ? startWindow : s;
-            const effectiveEnd = (e > endWindow) ? endWindow : e;
-
-            if (effectiveEnd > effectiveStart) {
-                standard += (effectiveEnd - effectiveStart);
-            }
-        }
-
-        return { standard, additional };
-    }
-
-    /* =====================================================
-       DATA EXTRACTION (KEEP EXISTING ROBUST LOGIC)
-    ===================================================== */
-    function extractTimes() {
-        const times = [];
-        const cells = document.querySelectorAll("td, div, span");
-
-        cells.forEach(cell => {
-            const text = cell.textContent.trim();
-            if (/^(In|Out)\s?-\s?\d{1,2}:\d{2}\s?(AM|PM)/i.test(text)) {
-                const match = text.match(/-\s?(\d{1,2}:\d{2}\s?(AM|PM))/i);
-                if (match && match[1]) {
-                    const parsed = parseTime(match[1]);
-                    if (parsed) {
-                        const today = new Date();
-                        if (parsed.toDateString() === today.toDateString()) {
-                            // Ignore future times (allow 1 min drift)
-                            if (parsed <= new Date(today.getTime() + 60000)) {
-                                times.push(parsed);
-                            }
+                        // --- 3️⃣ IGNORE LMS AUTO CHECKOUT BEFORE 5PM ---
+                        // Rule: If "Out" is exactly 5:00 PM but current time is before 5:00 PM, ignore it.
+                        const isExactly5PM = (parsedDate.getHours() === 17 && parsedDate.getMinutes() === 0);
+                        if (type === 'out' && isExactly5PM && now < punchMs) {
+                            return;
                         }
+
+                        found.push({ type, time: punchMs });
                     }
                 }
             }
         });
 
-        const uniqueTimes = Array.from(new Set(times.map(t => t.getTime())))
-            .map(t => new Date(t));
+        // De-duplication
+        const unique = [];
+        const seen = new Set();
+        found.forEach(p => {
+            const key = `${p.type}-${p.time}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                unique.push(p);
+            }
+        });
 
-        return uniqueTimes.sort((a, b) => a - b);
+        // Chronological sorting
+        unique.sort((a, b) => a.time - b.time);
+
+        return unique;
+    }
+
+    function isTodayContext(el, d, mShort, mFull) {
+        let depth = 0;
+        let curr = el;
+        const patterns = ["Today", `${d} ${mShort}`, `${mShort} ${d}`, `${d} ${mFull}`, `${mFull} ${d}`];
+
+        while (curr && depth < 5) {
+            const content = curr.textContent;
+            if (patterns.some(p => content.includes(p))) return true;
+            curr = curr.parentElement;
+            depth++;
+        }
+        return false;
     }
 
     function parseTime(timeStr) {
         const match = timeStr.match(/(\d{1,2}):(\d{2})\s?(AM|PM)/i);
         if (!match) return null;
+
         let hours = parseInt(match[1]);
         const minutes = parseInt(match[2]);
         const period = match[3].toUpperCase();
+
         if (period === "PM" && hours !== 12) hours += 12;
         if (period === "AM" && hours === 12) hours = 0;
+
         const date = new Date();
         date.setHours(hours, minutes, 0, 0);
         return date;
     }
 
     /* =====================================================
-       UTILITIES & OBSERVER
-    ===================================================== */
-    function setupMutationObserver() {
-        const body = document.body;
-        if (!body) {
-            setTimeout(setupMutationObserver, 2000);
-            return;
-        }
+       4. CALCULATION ENGINE (SINGLE SOURCE OF TRUTH)
+       ===================================================== */
+    function calculateMetrics(punches) {
+        const now = Date.now();
+        const today = new Date();
+        const winStart9AM = new Date(today).setHours(CONFIG.WORK_START_HOUR, 0, 0, 0);
 
-        const observer = new MutationObserver(() => {
-            if (!isContextValid()) return cleanupObserver();
-            // Debounce Scrape
-            clearTimeout(window._scrapeDebounce);
-            window._scrapeDebounce = setTimeout(scrapeTimeline, 500);
+        let workingTime = 0;
+        let breakTime = 0;
+        let additionalTime = 0;
+        let additionalBreakTime = 0;
+
+        let activeInAt = null;
+        let activeBreakAt = null;
+        let firstIn = null;
+
+        // Simulate state sequence (In -> Out -> In)
+        punches.forEach(p => {
+            if (p.type === 'in') {
+                if (!firstIn) firstIn = p.time;
+
+                if (activeBreakAt) {
+                    const split = splitDuration(activeBreakAt, p.time);
+                    breakTime += split.standard;
+                    additionalBreakTime += split.additional;
+                    activeBreakAt = null;
+                }
+                if (!activeInAt) activeInAt = p.time;
+            } else if (p.type === 'out') {
+                if (activeInAt) {
+                    const split = splitDuration(activeInAt, p.time);
+                    workingTime += split.standard;
+                    additionalTime += split.additional;
+                    activeInAt = null;
+                }
+                if (!activeBreakAt) activeBreakAt = p.time;
+            }
         });
 
-        observer.observe(body, { childList: true, subtree: true, characterData: true });
-        window.attendanceObserver = observer;
+        // --- HANDLE LIVE STATE (CURRENTLY IN OR OUT) ---
+        if (activeInAt) {
+            const split = splitDuration(activeInAt, now);
+            workingTime += split.standard;
+            additionalTime += split.additional;
+        } else if (activeBreakAt) {
+            const split = splitDuration(activeBreakAt, now);
+            breakTime += split.standard;
+            additionalBreakTime += split.additional;
+        }
+
+        // --- 2️⃣ LATE CHECK-IN DEDUCTION ---
+        // Rule: If check-in > 9:00 AM, deduct diff from breakRemaining (max 1 hour).
+        let lateDeduction = 0;
+        if (firstIn && firstIn > winStart9AM) {
+            const lateDiff = firstIn - winStart9AM;
+            lateDeduction = Math.min(lateDiff, 60 * 60 * 1000); // 1 hour cap
+        }
+
+        // --- 1️⃣ TOTAL TIME RULE ---
+        // Rule: Total Time = Working Time + Additional Time (Breaks EXCLUDED)
+        const totalTime = workingTime + additionalTime;
+
+        // --- 4️⃣ BREAK WINDOW RULE & REMAINING ---
+        // breakTime only includes "standard" (9-5) break durations per splitDuration().
+        // breakRemaining is reduced by breakTime AND lateDeduction.
+        const breakRemaining = Math.max(0, CONFIG.MAX_BREAK_MS - breakTime - lateDeduction);
+        const overusedBreak = Math.max(0, (breakTime + lateDeduction) - CONFIG.MAX_BREAK_MS);
+
+        const isWorking = !!activeInAt;
+
+        return {
+            workingTime,
+            breakTime,
+            additionalTime,
+            additionalBreakTime,
+            overusedBreak,
+            breakRemaining,
+            totalTime,
+            isWorking,
+            hasData: punches.length > 0
+        };
     }
 
-    function cleanupObserver() {
-        if (window.attendanceObserver) {
-            try { window.attendanceObserver.disconnect(); } catch (e) { }
-            window.attendanceObserver = null;
+    function splitDuration(start, end) {
+        const s = new Date(start);
+        const winStart = new Date(s).setHours(CONFIG.WORK_START_HOUR, 0, 0, 0);
+        const winEnd = new Date(s).setHours(CONFIG.WORK_END_HOUR, 0, 0, 0);
+
+        let standard = 0;
+        let additional = 0;
+
+        if (end <= winStart || start >= winEnd) {
+            additional = Math.max(0, end - start);
+        } else {
+            // Part before 9:00 AM
+            if (start < winStart) additional += (winStart - start);
+            // Part after 5:00 PM
+            if (end > winEnd) additional += (end - winEnd);
+
+            // Part inside 9:00 AM - 5:00 PM
+            const effectiveStart = Math.max(start, winStart);
+            const effectiveEnd = Math.min(end, winEnd);
+            standard = Math.max(0, effectiveEnd - effectiveStart);
+        }
+
+        return { standard, additional };
+    }
+
+    /* =====================================================
+       5. STATE SYNC & STORAGE
+       ===================================================== */
+    function processPage() {
+        if (!chrome?.runtime?.id) return;
+
+        try {
+            const punches = extractPunches();
+            const results = calculateMetrics(punches);
+
+            // Determine Status String
+            let status = "Present";
+            if (results.breakRemaining === 0) {
+                const penalty = (results.breakTime + results.overusedBreak); // Simple legacy status trigger
+                status = (penalty >= CONFIG.LATE_THRESHOLD_MS) ? "Over Break Time" : "Late";
+            }
+
+            // Construct Full Payload
+            const payload = {
+                workingTime: results.workingTime,
+                breakTime: results.breakTime,
+                additionalTime: results.additionalTime,
+                overusedBreak: results.overusedBreak,
+                totalTime: results.totalTime,
+                breakRemaining: results.breakRemaining,
+                hasData: results.hasData,
+                isWorking: results.isWorking,
+                status: status,
+                lastUpdated: Date.now()
+            };
+
+            // Debounce Storage Writes
+            const hash = JSON.stringify(payload);
+            if (hash === lastPayloadHash) return;
+            lastPayloadHash = hash;
+
+            chrome.storage.local.set(payload);
+
+        } catch (error) {
+            console.error("LMS Processor Error:", error);
         }
     }
 
-    // Periodic Update (Every 1s for Live Time)
-    setInterval(scrapeTimeline, 1000);
+    /* =====================================================
+       6. OBSERVER & EVENTS
+       ===================================================== */
+    function setupObserver() {
+        let debounceTimer;
+        const observer = new MutationObserver(() => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(processPage, CONFIG.DEBOUNCE_MS);
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        window.addEventListener('beforeunload', () => observer.disconnect());
+    }
+
+    init();
 
 })();
