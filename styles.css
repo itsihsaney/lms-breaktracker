@@ -205,36 +205,74 @@ body {
 }
 
 /* =====================================================
-   CIRCULAR PROGRESS RING
+   CIRCULAR PROGRESS RING — PREMIUM REDESIGN
    ===================================================== */
 
 .ring-section {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0 2px;
+}
+
+/* Glass card gives the ring a floating, premium dashboard feel */
+.ring-card {
+    background: linear-gradient(145deg, #f0f6ff 0%, #ffffff 60%, #e8f0fe 100%);
+    border-radius: 28px;
+    padding: 20px 24px 18px;
+    box-shadow:
+        0 0 0 1px rgba(37, 99, 235, 0.08),
+        0 4px 14px rgba(30, 58, 138, 0.10),
+        0 16px 40px rgba(30, 58, 138, 0.09),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.7);
     display: flex;
     justify-content: center;
 }
 
 .progress-container {
     position: relative;
-    width: 176px;
-    height: 176px;
-    filter: drop-shadow(var(--shadow-ring));
+    width: 192px;
+    height: 192px;
 }
 
+/* The SVG ring — rotated so arc starts at top */
 .progress-ring {
     transform: rotate(-90deg);
     display: block;
 }
 
+/* Track circle (background) */
 .progress-ring-bg {
-    stroke: #dce7f9;
+    stroke: rgba(30, 58, 138, 0.10);
 }
 
+/* Active progress arc */
 .progress-ring-circle {
-    stroke: var(--blue);
+    stroke: url(#ringGrad);
+    /* Blue gradient by default */
     stroke-linecap: round;
-    transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.4s ease;
+    /* Smooth arc animation */
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    filter: url(#ringGlow);
 }
 
+/* Warning state — orange gradient */
+.progress-ring-circle.ring-warn {
+    stroke: url(#ringGradWarn);
+    animation: ring-pulse-warn 1.8s ease-in-out infinite;
+}
+
+/* Empty / overused state — red gradient */
+.progress-ring-circle.ring-empty {
+    stroke: url(#ringGradRed);
+}
+
+/* Breathing animation — active on break */
+.progress-ring-circle.ring-breathing {
+    animation: ring-breathe 2.8s ease-in-out infinite;
+}
+
+/* Typography sits centered over the SVG */
 .progress-text {
     position: absolute;
     inset: 0;
@@ -242,24 +280,53 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
+    /* Pointer events off so SVG is still clickable */
+    pointer-events: none;
 }
 
+/* Main timer — Manrope for premium mono feel */
 .time-remaining {
-    font-size: 26px;
+    font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+    font-size: 28px;
     font-weight: 800;
-    color: var(--text-1);
-    letter-spacing: -0.03em;
+    /* Gradient text: deep-blue → sky */
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.04em;
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    /* Fallback for browsers without gradient text */
+    color: #1e3a8a;
 }
 
+/* Warning state — orange text */
+.time-remaining.text-warn {
+    background: linear-gradient(135deg, #b45309 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Empty state — red text */
+.time-remaining.text-empty {
+    background: linear-gradient(135deg, #991b1b 0%, #ef4444 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Label below the timer */
 .time-label {
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 600;
     text-transform: uppercase;
-    color: var(--text-3);
-    letter-spacing: 0.6px;
+    color: #94a3b8;
+    letter-spacing: 1.2px;
+    /* Mild text-shadow for depth against the glass card */
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
 }
 
 /* =====================================================
@@ -408,6 +475,34 @@ body {
 
     50% {
         opacity: 0.5;
+    }
+}
+
+/* Soft breathing scale when user is on break */
+@keyframes ring-breathe {
+
+    0%,
+    100% {
+        opacity: 1;
+        filter: url(#ringGlow) drop-shadow(0 0 0px rgba(30, 58, 138, 0));
+    }
+
+    50% {
+        opacity: 0.82;
+        filter: url(#ringGlow) drop-shadow(0 0 8px rgba(56, 189, 248, 0.35));
+    }
+}
+
+/* Warning pulse glow near break limit */
+@keyframes ring-pulse-warn {
+
+    0%,
+    100% {
+        filter: url(#ringGlow) drop-shadow(0 0 2px rgba(245, 158, 11, 0.2));
+    }
+
+    50% {
+        filter: url(#ringGlow) drop-shadow(0 0 10px rgba(245, 158, 11, 0.55));
     }
 }
 

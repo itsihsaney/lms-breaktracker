@@ -22,10 +22,10 @@ const el = {
 };
 
 /* ─── SVG Ring Config ─── */
-const RING_RADIUS = 73;
-const RING_CIRC = 2 * Math.PI * RING_RADIUS;   // ~458.67
-const MAX_BREAK_MS = 90 * 60 * 1000;              // 90 minutes
-const WARN_THRESHOLD = 15 * 60 * 1000;              // 15 minutes
+const RING_RADIUS = 80;                        // matches r="80" in updated SVG
+const RING_CIRC = 2 * Math.PI * RING_RADIUS; // ~502.65
+const MAX_BREAK_MS = 90 * 60 * 1000;          // 90 minutes
+const WARN_THRESHOLD = 15 * 60 * 1000;         // 15 minutes
 
 /* ─── Init ring so CSS transition works from start ─── */
 el.progressCircle.style.strokeDasharray = `${RING_CIRC} ${RING_CIRC}`;
@@ -145,16 +145,27 @@ function renderRing() {
 
     el.progressCircle.style.strokeDashoffset = `${offset}`;
 
-    // Color: Green → Blue → Orange → Red
+    // ── Apply CSS state classes (gradient stroke + animations) ──
+    const circle = el.progressCircle;
+    const timeEl = el.timeRemaining;
+
+    // Reset all state classes first
+    circle.classList.remove('ring-warn', 'ring-empty', 'ring-breathing');
+    timeEl.classList.remove('text-warn', 'text-empty');
+
     if (state.breakRemaining <= 0) {
-        el.progressCircle.style.stroke = 'var(--red)';
+        // Red state: break exhausted
+        circle.classList.add('ring-empty');
+        timeEl.classList.add('text-empty');
     } else if (state.breakRemaining <= WARN_THRESHOLD) {
-        el.progressCircle.style.stroke = 'var(--orange)';
-    } else if (state.breakRemaining <= MAX_BREAK_MS * 0.5) {
-        el.progressCircle.style.stroke = 'var(--blue)';
-    } else {
-        el.progressCircle.style.stroke = 'var(--green)';
+        // Orange state: < 15 min remaining — pulse glow
+        circle.classList.add('ring-warn');
+        timeEl.classList.add('text-warn');
+    } else if (!state.isWorking && state.hasData) {
+        // Breathing state: user is on break (not working)
+        circle.classList.add('ring-breathing');
     }
+    // else: default blue gradient (no additional class needed)
 
     el.timeRemaining.textContent = fmtHMS(state.breakRemaining);
 }
