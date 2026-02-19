@@ -7,76 +7,81 @@
     <title>Break Time Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
     <div class="container">
+
         <!-- Header -->
         <header class="header">
             <div class="header-left">
-                <h1>Break Time Tracker</h1>
-                <div class="status-badge" id="statusBadge">Loading...</div>
+                <h1 class="app-title">Break Tracker</h1>
+                <!-- Dual status row -->
+                <div class="status-row">
+                    <span class="badge badge-primary" id="primaryBadge">Loading...</span>
+                    <span class="badge badge-secondary" id="secondaryBadge" style="display:none;"></span>
+                </div>
             </div>
             <div class="header-right">
-                <img src="icons/logo.png" alt="From Ihsaney" class="brand-logo">
+                <img src="icons/logo.png" alt="Bridgeon Logo" class="brand-logo">
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="content">
+
             <!-- Circular Progress Ring -->
-            <div class="progress-container">
-                <svg class="progress-ring" width="180" height="180">
-                    <!-- Background circle -->
-                    <circle class="progress-ring-bg" stroke="#E5E7EB" stroke-width="10" fill="transparent" r="75"
-                        cx="90" cy="90" />
-                    <!-- Animated progress circle -->
-                    <circle class="progress-ring-circle" id="progressCircle" stroke="#2563EB" stroke-width="10"
-                        fill="transparent" r="75" cx="90" cy="90" />
-                </svg>
-                <!-- Time display in center -->
-                <div class="progress-text">
-                    <div class="time-remaining" id="timeRemaining">01:30:00</div>
-                    <div class="time-label">Break Remaining</div>
+            <div class="ring-section">
+                <div class="progress-container">
+                    <svg class="progress-ring" width="176" height="176" viewBox="0 0 176 176">
+                        <circle class="progress-ring-bg" stroke-width="10" fill="transparent" r="73" cx="88" cy="88" />
+                        <circle class="progress-ring-circle" id="progressCircle" stroke-width="10" fill="transparent"
+                            r="73" cx="88" cy="88" />
+                    </svg>
+                    <div class="progress-text">
+                        <div class="time-remaining" id="timeRemaining">01:30:00</div>
+                        <div class="time-label">Break Remaining</div>
+                    </div>
                 </div>
             </div>
 
             <!-- Metrics Grid -->
             <div class="metrics-grid">
                 <div class="metric-card card-work">
-                    <div class="card-icon work-icon"></div>
                     <span class="metric-label">Working Time</span>
                     <span class="metric-value" id="workDone">00:00:00</span>
                 </div>
+
                 <div class="metric-card card-break">
-                    <div class="card-icon break-icon"></div>
                     <span class="metric-label">Break Used</span>
                     <span class="metric-value" id="breakUsed">00:00:00</span>
-                    <span class="overused-break" id="overusedBreak" style="display: none;"></span>
+                    <span class="overused-pill" id="overusedBreak" style="display:none;"></span>
                 </div>
+
                 <div class="metric-card card-additional">
-                    <div class="card-icon additional-icon"></div>
                     <span class="metric-label">Additional Time</span>
                     <span class="metric-value" id="additionalTime">00:00:00</span>
                 </div>
+
                 <div class="metric-card card-total">
-                    <div class="card-icon total-icon"></div>
                     <span class="metric-label">Total Time</span>
                     <span class="metric-value" id="totalTime">00:00:00</span>
                 </div>
             </div>
 
             <!-- No Data Message -->
-            <div class="no-data-message" id="noDataMessage" style="display: none;">
-                No attendance data found. Please visit the attendance page.
+            <div class="no-data-message" id="noDataMessage" style="display:none;">
+                <div class="no-data-icon">📋</div>
+                <p>No attendance data found.<br>Please open the LMS attendance page.</p>
             </div>
+
         </main>
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Disclaimer: Bridgeon LMS does not use seconds in time calculations. So calculate the Time according to
+            <p>Disclaimer : Bridgeon LMS does not using seconds in time Calculations.So Calculate the Time according
                 that.</p>
         </footer>
     </div>
