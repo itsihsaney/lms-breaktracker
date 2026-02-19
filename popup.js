@@ -11,6 +11,7 @@
 const el = {
     primaryBadge: document.getElementById('primaryBadge'),
     secondaryBadge: document.getElementById('secondaryBadge'),
+    headerDate: document.getElementById('headerDate'),
     timeRemaining: document.getElementById('timeRemaining'),
     workDone: document.getElementById('workDone'),
     breakUsed: document.getElementById('breakUsed'),
@@ -49,10 +50,22 @@ let state = {
    INITIALIZATION
    ===================================================== */
 document.addEventListener('DOMContentLoaded', () => {
+    renderDate();             // Write today's date once
     renderLoading();          // Show loading state immediately
     fetchAndRender();         // First fetch
     setInterval(fetchAndRender, 1000);  // Live refresh
 });
+
+/* Render today's date into the header (runs once on open) */
+function renderDate() {
+    const now = new Date();
+    el.headerDate.textContent = now.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    }); // e.g. "Thursday, 19 Feb 2026"
+}
 
 /* =====================================================
    DATA SYNC  (read-only — no calculations here)

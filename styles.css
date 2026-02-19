@@ -94,6 +94,14 @@ body {
     line-height: 1;
 }
 
+/* Today's date — sits between title and badges */
+.header-date {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.65);
+    letter-spacing: 0.4px;
+}
+
 /* Dual badge row */
 .status-row {
     display: flex;
