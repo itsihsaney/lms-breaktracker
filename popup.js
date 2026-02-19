@@ -112,7 +112,7 @@ function renderPrimaryBadge() {
     } else if (state.isWorking) {
         setBadge(el.primaryBadge, '● Tracking Active', 'is-active');
     } else {
-        setBadge(el.primaryBadge, '☕ On Break', 'is-break');
+        setBadge(el.primaryBadge, 'On Break', 'is-break');
     }
 }
 
