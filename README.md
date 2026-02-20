@@ -11,16 +11,22 @@ A Chrome Extension (Manifest V3) that automatically reads attendance data from B
 - Extracts IN/OUT times using regex
 - No manual input needed
 
+✅ **Data Engine V2.1**
+- **True Total Time**: Starts from First Check-In and tracks continuously while active.
+- **Strict 9AM-5PM Window**: Separates Standard Working Time from Additional Time (Overtime).
+- **Late Deduction**: Automatically deducts late arrival time (up to 1h) from break balance.
+- **Smart Status**: Dynamic status badges (Present, Late, Over Break Time) based on usage.
+
 ✅ **Smart Calculations**
-- Break time = OUT → next IN
-- Work time = IN → OUT
-- Remaining break = 90 min - used
-- Remaining work = time until 5 PM
+- **Break time**: OUT → next IN (within 9-5 window).
+- **Working time**: IN → OUT (within 9-5 window).
+- **Additional Time**: Any work performed outside the 9-5 window.
+- **Remaining break**: Calculates 90 min limit minus used break and late arrival penalty.
 
 ✅ **Live Updates**
-- MutationObserver watches for new punches
-- Automatically recalculates when you punch
-- Real-time countdown
+- MutationObserver watches for any LMS attendance table updates.
+- Real-time refresh every second for live timers.
+- Persistent state via `chrome.storage.local`.
 
 ✅ **Visual Progress Ring**
 - Animated SVG circular progress bar
@@ -89,27 +95,30 @@ const TIME_REGEX = /(\d{1,2}:\d{2}\s?(AM|PM))/gi;
 
 **Break Time:**
 ```javascript
-// For times: [IN1, OUT1, IN2, OUT2, IN3]
-// Breaks: (OUT1 → IN2), (OUT2 → IN3)
+// Within 9 AM - 5 PM Window:
 totalBreak = (IN2 - OUT1) + (IN3 - OUT2)
+// Outside Window:
+additionalBreak = (pre-9AM or post-5PM durations)
 ```
 
 **Work Time:**
 ```javascript
-// Work: (IN1 → OUT1), (IN2 → OUT2), (IN3 → now if active)
-totalWork = (OUT1 - IN1) + (OUT2 - IN2) + ...
+// Within 9-5: (IN1 → OUT1) standard
+// Outside 9-5: (OUT2 → now) additional
+totalWork = standardWorking + additionalOvertime
 ```
 
 **Remaining Break:**
 ```javascript
-remainingBreak = 90 minutes - totalBreak
+// 90 min limit - (used 9-5 break) - (late arrival penalty)
+remainingBreak = Math.max(0, 90*60*1000 - breakTime - lateDiff)
 ```
 
 **Remaining Work:**
 ```javascript
-const endOfDay = new Date()
-endOfDay.setHours(17, 0, 0, 0) // 5:00 PM
-remainingWork = endOfDay - now
+// Remaining until shift end
+const endOfDay = new Date().setHours(17, 0, 0, 0)
+remainingWork = Math.max(0, endOfDay - now)
 ```
 
 ### MutationObserver
